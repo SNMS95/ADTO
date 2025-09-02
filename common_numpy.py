@@ -120,7 +120,8 @@ def compute_compliance(xphy, problem_data):
 
 
 def bisection(root_fn, x, lb=-10, ub=10, max_iter=100, tol=1e-10):
-    """Standard bisection algorithm to find root of root_fn(eta, fixed_inp) = 0"""
+    """Standard bisection algorithm to find root of 
+    root_fn(eta, fixed_inp) = 0. Assumes that function is monotonically increasing."""
     for _ in range(max_iter):
         mid = (lb + ub) / 2
         mid_val = root_fn(mid, x)
@@ -131,3 +132,59 @@ def bisection(root_fn, x, lb=-10, ub=10, max_iter=100, tol=1e-10):
         if np.abs(mid_val) < tol:
             break
     return mid
+
+
+def optimality_criteria(x, dc, dv, g, move=0.2, tol=1e-3):
+    """
+    Optimality Criteria (OC) update for topology optimization.
+
+    Parameters
+    ----------
+    nelx, nely : int
+        Number of elements in x and y directions.
+    x : ndarray
+        Current design variable array of size (nelx * nely,).
+    volfrac : float
+        Prescribed volume fraction.
+    dc : ndarray
+        Sensitivity of compliance w.r.t. x.
+    dv : ndarray
+        Sensitivity of volume w.r.t. x.
+    g : float
+        Current constraint violation.
+    move : float, optional
+        Maximum change in design variable per iteration (default 0.2).
+    tol : float, optional
+        Relative tolerance for the bisection loop (default 1e-3).
+
+    Returns
+    -------
+    xnew : ndarray
+        Updated design variable array.
+    gt : float
+        Updated constraint violation.
+    """
+
+    # Function defining the volume constraint balance
+    def constraint_balance(lmid, x):
+        """Returns volume constraint violation for a given Lagrange multiplier lmid."""
+        x_candidate = np.maximum(0.0, np.maximum(
+            x - move,
+            np.minimum(1.0, np.minimum(
+                x + move, x * np.sqrt(-dc / (dv * lmid))))
+        ))
+        # Need to flip sign here since bisection is for monotonically increasing functions
+        return -1*(g + np.sum(dv * (x_candidate - x)))
+
+    # Solve for the Lagrange multiplier using bisection
+    lmid = bisection(constraint_balance, x=x, lb=1e-9,
+                     ub=1e9, tol=tol, max_iter=500)
+
+    # Final update with computed multiplier
+    xnew = np.maximum(0.0, np.maximum(
+        x - move,
+        np.minimum(1.0, np.minimum(x + move, x * np.sqrt(-dc / (dv * lmid))))
+    ))
+    gt = g + np.sum(dv * (xnew - x))
+
+    return xnew, gt
