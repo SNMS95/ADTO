@@ -188,3 +188,25 @@ def optimality_criteria(x, dc, dv, g, move=0.2, tol=1e-3):
     gt = g + np.sum(dv * (xnew - x))
 
     return xnew, gt
+
+
+def optimality_criteria2(rhoi, dc, dv, max_move=0.2,
+                         vol_constr_fn=None):
+    """Fully differentiable version of the optimality criteria."""
+
+    def compute_xnew(lmid, rho):
+        rho_candidate = np.maximum(0.0, np.maximum(
+            rho - max_move,
+            np.minimum(1.0, np.minimum(
+                rho + max_move, rho * np.sqrt(-dc / (dv * lmid))))
+        ))
+        return rho_candidate
+
+    def f(lambda_, rho):
+        xnew = compute_xnew(lambda_, rho)
+        # Multiply by -1 so that bisection works
+        return -1*vol_constr_fn(xnew)
+
+    lambda_final = bisection(
+        f, x=rhoi, lb=1e-9, ub=1e9, tol=1e-3, max_iter=500)
+    return compute_xnew(lambda_final, rhoi)
