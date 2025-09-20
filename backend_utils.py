@@ -1,7 +1,7 @@
 import os
 from common_numpy import compute_compliance, bisection
 # Detect active backend
-BACKEND = os.environ.get("KERAS_BACKEND", "jax")
+BACKEND = os.environ.get("ML_BACKEND", "jax")
 print(f"Using backend: {BACKEND}")
 
 if BACKEND == "jax":
