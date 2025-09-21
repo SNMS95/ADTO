@@ -211,8 +211,8 @@ elif BACKEND == "torch":
         Ny, Nx = problem_data['Ny'], problem_data['Nx']
         h = torch.tensor(problem_data['h'], dtype=x.dtype, device=x.device)
         Hs = torch.tensor(problem_data['Hs'], dtype=x.dtype, device=x.device)
-
-        x_2d = x.reshape(Ny, Nx)
+        # To enable fortran encoding in torch
+        x_2d = x.reshape(Nx, Ny).t()
         kernel = h.unsqueeze(0).unsqueeze(0)
         x_input = x_2d.unsqueeze(0).unsqueeze(0)
         x_filtered = F.conv2d(
