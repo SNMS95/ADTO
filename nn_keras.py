@@ -3,8 +3,12 @@ import numpy as np
 import os
 # Check that Keras backend has already been set
 # before importing keras
-assert os.environ.get("KERAS_BACKEND") is not None
+ML_BACKEND = os.environ.get("ML_BACKEND", None)
+assert ML_BACKEND is not None
+os.environ["KERAS_BACKEND"] = ML_BACKEND
 import keras  # noqa
+assert keras.backend.backend() == ML_BACKEND, \
+    "Backend was not set correctly; restart notebook: Runtime/Restart session"
 
 
 def get_optimizer(opt_str, **hyper_params):
@@ -20,16 +24,21 @@ def get_optimizer(opt_str, **hyper_params):
         raise ValueError(f"Unsupported optimizer: {opt_str}")
 
 
+def get_input_coords(Nx, Ny):
+    """Get the coordinates of element centroids in [-1, 1]x[-1, 1]"""
+    x_centers = np.linspace(-1 + 1/Nx, 1 - 1/Nx, Nx)
+    y_centers = np.linspace(-1 + 1/Ny, 1 - 1/Ny, Ny)
+    x_grid, y_grid = np.meshgrid(x_centers, y_centers, indexing='xy')
+    # Stack coordinates with Fortran-style ordering
+    input_to_net = np.column_stack(
+        [x_grid.ravel(order='F'), y_grid.ravel(order='F')])
+    return input_to_net
+
+
 def nn_input(nn_type, Nx=64, Ny=64, latent_size=128):
     """Generate required neural network inputs"""
     if nn_type in ["mlp", "siren"]:
-        # Need coordinates of element centroids
-        x_centers = np.linspace(-1 + 1/Nx, 1 - 1/Nx, Nx)
-        y_centers = np.linspace(-1 + 1/Ny, 1 - 1/Ny, Ny)
-        x_grid, y_grid = np.meshgrid(x_centers, y_centers, indexing='xy')
-        # Stack coordinates with Fortran-style ordering
-        input_to_net = np.column_stack(
-            [x_grid.ravel(order='F'), y_grid.ravel(order='F')])
+        input_to_net = get_input_coords(Nx, Ny)
         return input_to_net
     elif nn_type == "cnn":
         return np.random.normal(size=(latent_size,)).reshape(1, latent_size)
