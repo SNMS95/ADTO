@@ -110,6 +110,7 @@ if BACKEND == "jax":
 elif BACKEND == "torch":
     import torch
     import torch.nn.functional as F
+    torch.set_default_dtype(torch.float64)
 
     class ComplianceAD(torch.autograd.Function):
         """Custom PyTorch autograd function for compliance computation"""
@@ -216,7 +217,7 @@ elif BACKEND == "torch":
         x_input = x_2d.unsqueeze(0).unsqueeze(0)
         x_filtered = F.conv2d(
             x_input, kernel, padding='same') / Hs.unsqueeze(0).unsqueeze(0)
-        return x_filtered.squeeze().reshape(-1)
+        return x_filtered.squeeze().T.ravel()
 
     def volume_enforcing_filter(x, volfrac):
         """PyTorch version with differentiable sigmoid"""
