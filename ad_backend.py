@@ -229,7 +229,9 @@ if BACKEND == "jax":
 
     def F_opt(problem_params, u_f, problem_data):
         """
-        Residual function for the FEA system, F(params, u) = K(params)u - f = 0.
+        Residual function for the FEA system
+
+        F(params, u) = K(params)u - f = 0.
 
         This function is used by the Implicit Function Theorem in the backward
         pass of the FEA solver. It must be a pure JAX function.
