@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.sparse import coo_matrix
+from scipy.sparse import coo_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
 from scipy.signal import convolve
 
@@ -63,6 +63,13 @@ def setup_fea_problem(Nx=64, Ny=32, rmin=2.0, E0=1.0, Emin=1e-6, penal=3.0,
         'h': h, 'Hs': Hs
     }
     return problem_data
+
+
+def external_linear_solver(A_data, i_inds, j_inds, b):
+    A = csr_matrix((A_data, (i_inds, j_inds)),
+                   shape=(b.shape[0], b.shape[0]))
+    x = spsolve(A, b)
+    return x
 
 
 def assemble_stiffness_matrix(E, problem_data):
@@ -132,62 +139,6 @@ def bisection(root_fn, x, lb=-10, ub=10, max_iter=100, tol=1e-10):
         if np.abs(mid_val) < tol:
             break
     return mid
-
-
-# def optimality_criteria(x, dc, dv, g, move=0.2, tol=1e-3):
-#     """
-#     Optimality Criteria (OC) update for topology optimization.
-
-#     Parameters
-#     ----------
-#     nelx, nely : int
-#         Number of elements in x and y directions.
-#     x : ndarray
-#         Current design variable array of size (nelx * nely,).
-#     volfrac : float
-#         Prescribed volume fraction.
-#     dc : ndarray
-#         Sensitivity of compliance w.r.t. x.
-#     dv : ndarray
-#         Sensitivity of volume w.r.t. x.
-#     g : float
-#         Current constraint violation.
-#     move : float, optional
-#         Maximum change in design variable per iteration (default 0.2).
-#     tol : float, optional
-#         Relative tolerance for the bisection loop (default 1e-3).
-
-#     Returns
-#     -------
-#     xnew : ndarray
-#         Updated design variable array.
-#     gt : float
-#         Updated constraint violation.
-#     """
-
-#     # Function defining the volume constraint balance
-#     def constraint_balance(lmid, x):
-#         """Returns volume constraint violation for a given Lagrange multiplier lmid."""
-#         x_candidate = np.maximum(0.0, np.maximum(
-#             x - move,
-#             np.minimum(1.0, np.minimum(
-#                 x + move, x * np.sqrt(-dc / (dv * lmid))))
-#         ))
-#         # Need to flip sign here since bisection is for monotonically increasing functions
-#         return -1*(g + np.sum(dv * (x_candidate - x)))
-
-#     # Solve for the Lagrange multiplier using bisection
-#     lmid = bisection(constraint_balance, x=x, lb=1e-9,
-#                      ub=1e9, tol=tol, max_iter=500)
-
-#     # Final update with computed multiplier
-#     xnew = np.maximum(0.0, np.maximum(
-#         x - move,
-#         np.minimum(1.0, np.minimum(x + move, x * np.sqrt(-dc / (dv * lmid))))
-#     ))
-#     gt = g + np.sum(dv * (xnew - x))
-
-#     return xnew, gt
 
 
 def optimality_criteria(rhoi, dc, dv, max_move=0.2,
