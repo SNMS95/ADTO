@@ -22,6 +22,7 @@ print(f"Using backend: {BACKEND}")
 if BACKEND == "jax":
     import jax
     from jax.scipy.signal import convolve
+    import jax.experimental.sparse as jsparse
     import jax.numpy as jnp
 
     # Enable float64 for better numerical stability (especially in FEA)
@@ -191,6 +192,27 @@ if BACKEND == "jax":
             A_data, i_inds, j_inds, b
         )
 
+    @jax.custom_vjp
+    def solve(A_data, i_inds, j_inds, b):
+        x = solve_host_pure(A_data, i_inds, j_inds, b)
+        return x
+
+    def solve_host_fwd(A_data, i_inds, j_inds, b):
+        x = solve(A_data, i_inds, j_inds, b)
+        return x, (x, A_data, i_inds, j_inds)
+
+    def solve_host_bwd(res, g):
+        x, A_data, i_inds, j_inds = res
+        # Solve adjoint problem A^T * lambda = g
+        # note the transpose by swapping i and j
+        lambda_ = solve(A_data, j_inds, i_inds, g)
+        # Compute gradient w.r.t. A_data
+        dA_data = -lambda_[i_inds] * x[j_inds]
+        db = lambda_
+        return (dA_data, None, None, db)
+
+    solve.defvjp(solve_host_fwd, solve_host_bwd)
+
     def assemble_stiffness_matrix_parts(E, problem_data):
         """Assemble global stiffness matrix"""
         KE, cMat = problem_data['KE'], problem_data['cMat']
@@ -200,7 +222,7 @@ if BACKEND == "jax":
         sK = (KE.ravel(order='F')[jnp.newaxis, :] * E[:, jnp.newaxis]).ravel()
         return iK, jK, sK
 
-    def reduce_K(iK, jK, sK, free_dofs, n_dofs):
+    def reduce_K(iK, jK, sK, free_dofs, n_dofs, return_sparse=False):
         """
         Reduces the global stiffness matrix to only include free dofs.
 
@@ -221,11 +243,13 @@ if BACKEND == "jax":
         sK_f = sK[mask]
 
         # build BCOO matrix
-        K_f = jax.experimental.sparse.BCOO((sK_f, jnp.stack([iK_f, jK_f]).T),
-                                           shape=(len(free_dofs),
-                                                  len(free_dofs)))
-
-        return K_f
+        if return_sparse:
+            K_f = jsparse.BCOO((sK_f, jnp.stack([iK_f, jK_f]).T),
+                               shape=(len(free_dofs),
+                                      len(free_dofs)))
+            return K_f
+        else:
+            return iK_f, jK_f, sK_f
 
     def F_opt(problem_params, u_f, problem_data):
         """
@@ -316,6 +340,110 @@ elif BACKEND == "torch":
     import torch
     import torch.nn.functional as F
     torch.set_default_dtype(torch.float64)
+
+    def solve_host_pure(A_data, i_inds, j_inds, b):
+        # convert to numpy on host
+        A_data = A_data.detach().cpu().numpy()
+        i_inds = i_inds.detach().cpu().numpy()
+        j_inds = j_inds.detach().cpu().numpy()
+        if isinstance(b, torch.Tensor):
+            b = b.detach().cpu().numpy()
+        return torch.from_numpy(external_linear_solver(A_data, i_inds, j_inds, b))
+
+    class SparseSolve(torch.autograd.Function):
+        @staticmethod
+        def forward(ctx, A_data, i_inds, j_inds, b):
+            # Forward solve
+            x = solve_host_pure(A_data, i_inds, j_inds, b)
+
+            # Save tensors for backward
+            ctx.save_for_backward(A_data, i_inds, j_inds, x)
+            return x
+
+        @staticmethod
+        def backward(ctx, grad_x):
+            A_data, i_inds, j_inds, x = ctx.saved_tensors
+
+            # Solve adjoint system: A^T lambda = grad_x
+            lambda_ = solve_host_pure(
+                A_data,
+                j_inds,   # swapped
+                i_inds,
+                grad_x
+            )
+
+            # Gradient w.r.t. A_data
+            # dA_ij = -lambda_i * x_j
+            dA_data = -lambda_[i_inds] * x[j_inds]
+
+            # Gradient w.r.t. b
+            db = lambda_
+
+            # None for integer indices
+            return dA_data, None, None, db
+
+    def solve(A_data, i_inds, j_inds, b):
+        return SparseSolve.apply(A_data, i_inds, j_inds, b)
+
+    def assemble_stiffness_matrix_parts(E, problem_data):
+        """Assemble global stiffness matrix parts (PyTorch version)."""
+        device, dtype = E.device, E.dtype
+        # Convert NumPy → Torch
+        KE = torch.as_tensor(
+            problem_data["KE"],
+            dtype=dtype,
+            device=device
+        )  # (8, 8), float
+
+        cMat = torch.as_tensor(
+            problem_data["cMat"],
+            dtype=torch.long,
+            device=device
+        )  # (n_elem, 8), indices
+
+        # iK = kron(cMat, ones((8, 1))).T.ravel(order='F')
+        iK = torch.kron(cMat, torch.ones(
+            (8, 1), device=device, dtype=cMat.dtype))
+        iK = iK.reshape(-1)
+
+        # jK = kron(cMat, ones((1, 8))).ravel()
+        jK = torch.kron(cMat, torch.ones(
+            (1, 8), device=device, dtype=cMat.dtype))
+        jK = jK.reshape(-1)
+
+        # sK = (KE.ravel(order='F')[None, :] * E[:, None]).ravel()
+        KE_flat = KE.t().reshape(-1)  # column-major flatten
+        sK = (KE_flat.unsqueeze(0) * E.unsqueeze(1)).reshape(-1)
+
+        return iK, jK, sK
+
+    def reduce_K(iK, jK, sK, free_dofs, n_dofs):
+        """
+        Reduce the global stiffness matrix to free DOFs only.
+
+        Equivalent to K[np.ix_(free, free)] but implemented via triplet filtering.
+        """
+
+        device = iK.device
+        free_dofs = torch.as_tensor(
+            free_dofs, dtype=torch.long, device=device
+        )
+
+        # Build inverse map: old_dof -> new_dof index, -1 for fixed DOFs
+        inv_map = -torch.ones(
+            n_dofs, dtype=torch.long, device=device
+        )
+        inv_map[free_dofs] = torch.arange(
+            free_dofs.numel(), device=device
+        )
+        # Mask: keep entries where both row and column are free
+        mask = (inv_map[iK] >= 0) & (inv_map[jK] >= 0)
+        # Filter and remap triplets
+        iK_f = inv_map[iK[mask]]
+        jK_f = inv_map[jK[mask]]
+        sK_f = sK[mask]
+
+        return iK_f, jK_f, sK_f
 
     # --------------------------------------------------------------------------
     # 1. Differentiable Compliance Calculation (torch.autograd.Function)
@@ -470,4 +598,5 @@ else:
 
 # Export the correct functions based on the selected backend
 __all__ = ['apply_density_filter', 'volume_enforcing_filter',
-           'compute_compliance_differentiable', 'bisection_differentiable']
+           'compute_compliance_differentiable', 'bisection_differentiable',
+           'solve_from_params', "solve"]
