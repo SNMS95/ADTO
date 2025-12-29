@@ -10,7 +10,7 @@ that are not natively differentiable, such as the finite element analysis
 The active backend is determined by the `ML_BACKEND` environment variable.
 """
 import os
-from non_ad_ops import compute_compliance, bisection, external_linear_solver
+from src.non_ad_ops import compute_compliance, bisection, external_linear_solver
 
 # Detect active backend
 BACKEND = os.environ.get("ML_BACKEND", "jax")

@@ -36,10 +36,14 @@ Demonstrates Neural Topology Optimization (NTO), where a neural network paramete
 ---
 
 ## How to Use
+
+Ideally
 	1.	Open any notebook (e.g., TO.ipynb or neuralTO.ipynb) using Google Colab.
 	2.	Select the desired backend (JAX or PyTorch) within the notebook.
 	3.	Run the cells sequentially to explore differentiable TO workflows.
 
+For running locally,
+....
 ---
 
 ## Citation
