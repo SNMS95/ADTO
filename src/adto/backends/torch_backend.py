@@ -12,13 +12,17 @@ torch.set_default_dtype(torch.float64)
 
 
 def solve_host_pure(A_data, i_inds, j_inds, b):
+    device = A_data.device
+    dtype = A_data.dtype
     # convert to numpy on host
     A_data = A_data.detach().cpu().numpy()
     i_inds = i_inds.detach().cpu().numpy()
     j_inds = j_inds.detach().cpu().numpy()
     if isinstance(b, torch.Tensor):
         b = b.detach().cpu().numpy()
-    return torch.from_numpy(external_linear_solver(A_data, i_inds, j_inds, b))
+    return torch.tensor(external_linear_solver(A_data, i_inds, j_inds, b),
+                        device=device,
+                        dtype=dtype)
 
 
 class SparseSolve(torch.autograd.Function):
