@@ -1,23 +1,65 @@
+"""
+Non-differentiable operations for Topology Optimization.
+
+This module contains the core Finite Element Analysis (FEA)
+routines implemented using NumPy and SciPy. These operations are NOT natively
+compatible with automatic differentiation (AD) frameworks like JAX or PyTorch.
+
+To use these in an AD pipeline, one must usually define custom rules.
+"""
 import numpy as np
 from scipy.sparse import coo_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
 from scipy.signal import convolve
+from typing import Dict, Tuple, Callable, Any, Optional
 
 # Set seed for numpy
 
 
-def set_random_seed(random_seed):
+def set_random_seed(random_seed: int) -> None:
+    """Sets the random seed for NumPy to ensure reproducibility."""
     np.random.seed(random_seed)
 
 
-def setup_fea_problem(Nx=64, Ny=32, rmin=2.0, E0=1.0, Emin=1e-6, penal=3.0,
-                      nu=0.3, random_seed=0):
+def setup_fea_problem(Nx: int = 64, Ny: int = 32, rmin: float = 2.0,
+                      E0: float = 1.0,
+                      Emin: float = 1e-6, penal: float = 3.0,
+                      nu: float = 0.3, random_seed: int = 0) -> Dict[str, Any]:
     """
     Precompute all problem-specific matrices and parameters.
-    Returns a dictionary containing all precomputed data.
+
+    Sets up a 2D Cantilever beam problem with a fixed left edge and a downward
+    load on the bottom-right corner. Uses 4-node quadrilateral elements.
+
+    Args:
+        Nx: Number of elements in the x-direction.
+        Ny: Number of elements in the y-direction.
+        rmin: Filter radius for the density filter.
+        E0: Young's modulus of the solid material.
+        Emin: Young's modulus of the void material (to avoid singularity).
+        penal: Penalization factor for SIMP.
+        nu: Poisson's ratio.
+        random_seed: Seed for random number generation.
+
+    Returns:
+        A dictionary containing all precomputed data:
+        - 'Nx', 'Ny': Grid dimensions.
+        - 'KE': Element stiffness matrix (8x8).
+        - 'cMat': Connectivity matrix mapping elements to DOFs (nDof_per_elem x nElem).
+        - 'fixed': Indices of fixed degrees of freedom.
+        - 'free': Indices of free degrees of freedom.
+        - 'F': Global load vector.
+        - 'E0', 'E_min', 'penal': Material properties.
+        - 'h': Filter kernel for density filtering.
+        - 'Hs': Normalization factor for the filter (sum of weights).
+
+    Note:
+    - We use Fortran ('F') order for reshaping to maintain consistency with 
+        element numbering as in 88 lines code.
     """
     set_random_seed(random_seed)
-    # Element stiffness matrix for 4-node quad element
+
+    # Element stiffness matrix for 4-node quad element (analytical integration)
     A11 = np.array([[12, 3, -6, -3], [3, 12, 3, 0],
                    [-6, 3, 12, -3], [-3, 0, -3, 12]])
     A12 = np.array([[-6, -3, 0, 3], [-3, -6, -3, -6],
@@ -31,9 +73,12 @@ def setup_fea_problem(Nx=64, Ny=32, rmin=2.0, E0=1.0, Emin=1e-6, penal=3.0,
                             nu * np.block([[B11, B12], [B12.T, B11]]))
 
     # DOF connectivity matrix
+    # Map node indices to a grid
     nodeNrs = np.arange((1 + Nx) * (1 + Ny)).reshape(
         (1 + Ny), (1 + Nx), order='F')
+    # Calculate global DOF indices for the top-left node of each element
     cVec = (nodeNrs[:-1, :-1] * 2 + 2).reshape(-1, 1, order='F').ravel()
+    # Offsets to get all 8 DOFs for a quad element relative to the top-left node
     offsets = np.array([0, 1, 2*Ny + 2, 2*Ny + 3,
                        2*Ny, 2*Ny + 1, -2, -1])
     cMat = cVec[:, None] + offsets
@@ -50,10 +95,11 @@ def setup_fea_problem(Nx=64, Ny=32, rmin=2.0, E0=1.0, Emin=1e-6, penal=3.0,
     F = np.zeros(nDof)
     F[1] = -1.0  # Downward unit load
 
-    # # Density filter
+    # Density filter setup
     range_val = np.arange(-np.ceil(rmin) + 1, np.ceil(rmin))
     dx, dy = np.meshgrid(range_val, range_val)
     h = np.maximum(0, rmin - np.sqrt(dx**2 + dy**2))
+    # Hs is the sum of filter weights for each element (used for normalization)
     Hs = convolve(np.ones((Ny, Nx)), h, mode='same')
 
     problem_data = {
@@ -65,35 +111,64 @@ def setup_fea_problem(Nx=64, Ny=32, rmin=2.0, E0=1.0, Emin=1e-6, penal=3.0,
     return problem_data
 
 
-def external_linear_solver(A_data, i_inds, j_inds, b):
+def external_linear_solver(A_data: np.ndarray, i_inds: np.ndarray,
+                           j_inds: np.ndarray, b: np.ndarray) -> np.ndarray:
+    """
+    Solve a linear system Ax = b using SciPy's sparse solver.
+
+    Args:
+        A_data: Non-zero values of the sparse matrix A.
+        i_inds: Row indices of the non-zero values.
+        j_inds: Column indices of the non-zero values.
+        b: Right-hand side vector.
+
+    Returns:
+        x: Solution vector.
+    """
     A = csr_matrix((A_data, (i_inds, j_inds)),
                    shape=(b.shape[0], b.shape[0]))
     x = spsolve(A, b)
     return x
 
 
-def assemble_stiffness_matrix(E, problem_data):
-    """Assemble global stiffness matrix"""
+def assemble_stiffness_matrix(E: np.ndarray, problem_data: Dict[str, Any]
+                              ) -> csr_matrix:
+    """
+    Assemble the global stiffness matrix K from element stiffness matrices.
+
+    Args:
+        E: Young's modulus for each element (Nx*Ny,).
+        problem_data: Dictionary containing 'KE' and 'cMat'.
+
+    Returns:
+        K: Global stiffness matrix in CSR format.
+    """
     KE, cMat, F = problem_data['KE'], problem_data['cMat'], problem_data['F']
     nDof = len(F)
 
     # Build sparse matrix
+    # Repeat indices for COO format construction
     iK = np.kron(cMat, np.ones((8, 1), dtype=int)).T.ravel(order='F')
     jK = np.kron(cMat, np.ones((1, 8), dtype=int)).ravel()
+    # Scale element stiffness matrix by material properties E
     sK = (KE.ravel(order='F')[np.newaxis, :] * E[:, np.newaxis]).ravel()
+
     K = coo_matrix((sK, (iK, jK)), shape=(nDof, nDof)).tocsr()
     return K
 
 
-def solve_displacement(K, problem_data):
-    """Solve for displacements"""
+def solve_displacement(K: csr_matrix, problem_data: Dict[str, Any]
+                       ) -> np.ndarray:
+    """Solve Ku = F for displacements u, accounting for boundary conditions."""
     F, free = problem_data['F'], problem_data['free']
     u = np.zeros(len(F))
+    # Solve only for free DOFs - Any solver can be used here
     u[free] = spsolve(K[np.ix_(free, free)], F[free])
     return u
 
 
-def compute_compliance(xphy, problem_data):
+def compute_compliance(xphy: np.ndarray, problem_data: Dict[str, Any]
+                       ) -> Tuple[float, np.ndarray]:
     """
     Compute compliance and its gradient w.r.t. design variables.
 
@@ -105,7 +180,8 @@ def compute_compliance(xphy, problem_data):
 
     Returns:
         compliance: Scalar compliance value
-        ce: Element-wise compliance gradients, shape (Nx*Ny,)
+        ce_unscaled: Element-wise strain energy term (u_e^T k_0 u_e), shape (Nx*Ny,).
+                     Used for sensitivity calculation: dc/dx = -p * x^(p-1) * (E0-Emin) * ce_unscaled.
     """
     # Apply density filter
     xphy = xphy.ravel(order='F')
@@ -121,14 +197,28 @@ def compute_compliance(xphy, problem_data):
     # Compute element-wise compliance for sensitivity
     cMat, KE = problem_data['cMat'], problem_data['KE']
     u_elem = u[cMat]
+    # ce_unscaled = u_e^T * KE * u_e for each element
     ce_unscaled = np.sum((u_elem @ KE) * u_elem, axis=1)
     ce_scaled = E * ce_unscaled
     return ce_scaled.sum(), ce_unscaled
 
 
-def bisection(root_fn, x, lb=-10, ub=10, max_iter=100, tol=1e-10):
-    """Standard bisection algorithm to find root of 
-    root_fn(eta, fixed_inp) = 0. Assumes that function is monotonically increasing."""
+def bisection(root_fn: Callable[[float, Any], float], x: Any,
+              lb: float = -10.0, ub: float = 10.0,
+              max_iter: int = 100, tol: float = 1e-10) -> float:
+    """
+    Standard bisection algorithm to find root of root_fn(eta, fixed_inp) = 0.
+
+    Assumes that function is monotonically increasing.
+
+    Args:
+        root_fn: Function to find root of. Signature: f(variable, fixed_input) -> float.
+        x: Fixed input passed to root_fn.
+        lb: Lower bound for search.
+        ub: Upper bound for search.
+        max_iter: Maximum iterations.
+        tol: Tolerance for convergence.
+    """
     for _ in range(max_iter):
         mid = (lb + ub) / 2
         mid_val = root_fn(mid, x)
@@ -141,11 +231,27 @@ def bisection(root_fn, x, lb=-10, ub=10, max_iter=100, tol=1e-10):
     return mid
 
 
-def optimality_criteria(rhoi, dc, dv, max_move=0.2,
-                        vol_constr_fn=None):
-    """Fully differentiable version of the optimality criteria."""
+def optimality_criteria(rhoi: np.ndarray, dc: np.ndarray, dv: np.ndarray,
+                        max_move: float = 0.2,
+                        vol_constr_fn: Optional[Callable[[
+                            np.ndarray], float]] = None
+                        ) -> np.ndarray:
+    """
+    Optimality Criteria (OC) update scheme for topology optimization.
+
+    Updates the density distribution to satisfy the volume constraint while
+    decreasing compliance, based on the KKT conditions.
+
+    Args:
+        rhoi: Current density distribution.
+        dc: Sensitivity of objective (compliance) w.r.t density.
+        dv: Sensitivity of volume w.r.t density (usually constant).
+        max_move: Maximum change in density per iteration (damping).
+        vol_constr_fn: Function that returns (current_vol - target_vol).
+    """
 
     def compute_xnew(lmid, rho):
+        # Heuristic update rule derived from KKT conditions
         rho_candidate = np.maximum(0.0, np.maximum(
             rho - max_move,
             np.minimum(1.0, np.minimum(
