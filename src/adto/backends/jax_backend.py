@@ -183,7 +183,8 @@ def solve_host_pure(A_data, i_inds, j_inds, b):
         external_linear_solver,
         # The shape and dtype of the output
         jax.ShapeDtypeStruct(b.shape, b.dtype),
-        A_data, i_inds, j_inds, b
+        A_data, i_inds, j_inds, b,
+        vmap_method="sequential"  # for batching support
     )
 
 
