@@ -12,7 +12,14 @@ from scipy.sparse import coo_matrix, csr_matrix
 from scipy.sparse.linalg import spsolve
 from scipy.signal import convolve
 from typing import Dict, Tuple, Callable, Any, Optional
-
+from adto.utils import (
+    select_edge_nodes,
+    select_corner_nodes,
+    select_center_node,
+    select_region_nodes,
+    nodes_to_dofs,
+    visualize_bc,
+)
 # Set seed for numpy
 
 
@@ -21,15 +28,127 @@ def set_random_seed(random_seed: int) -> None:
     np.random.seed(random_seed)
 
 
-def setup_fea_problem(Nx: int = 64, Ny: int = 32, rmin: float = 2.0,
-                      E0: float = 1.0,
-                      Emin: float = 1e-6, penal: float = 3.0,
-                      nu: float = 0.3, random_seed: int = 0) -> Dict[str, Any]:
+def mbb_bc(
+    Nx: int, Ny: int, nodeNrs: np.ndarray, nDof: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Cantilever beam boundary conditions: fixed left edge, load at bottom-right.
+
+    Args:
+        Nx: Number of elements in x-direction.
+        Ny: Number of elements in y-direction.
+        nodeNrs: Node numbering array (Ny+1 x Nx+1).
+        nDof: Total number of degrees of freedom.
+
+    Returns:
+        fixed: Array of fixed DOF indices.
+        free: Array of free DOF indices.
+        F: Load vector with applied forces.
+    """
+    # Fix left edge in x direction
+    left_nodes = select_edge_nodes(nodeNrs, "left")
+    fixed_x = nodes_to_dofs(left_nodes, "x")
+
+    # Fix bottom-right corner in y direction
+    br_node = select_corner_nodes(nodeNrs, "bottom-right")
+    fixed_y = nodes_to_dofs(br_node, "y")
+
+    fixed = np.union1d(fixed_x, fixed_y)
+    free = np.setdiff1d(np.arange(nDof), fixed)
+
+    # Load vector: downward unit load at bottom-right
+    F = np.zeros(nDof)
+    F[1] = -1.0
+
+    return fixed, free, F
+
+
+def tensile_bc(
+    Nx: int, Ny: int, nodeNrs: np.ndarray, nDof: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Tensile beam boundary conditions: fixed left edge, tensileload at mid-right.
+
+    Args:
+        Nx: Number of elements in x-direction.
+        Ny: Number of elements in y-direction.
+        nodeNrs: Node numbering array (Ny+1 x Nx+1).
+        nDof: Total number of degrees of freedom.
+
+    Returns:
+        fixed: Array of fixed DOF indices.
+        free: Array of free DOF indices.
+        F: Load vector with applied forces.
+    """
+    # Fix left edge in x direction
+    left_nodes = select_edge_nodes(nodeNrs, "left")
+    fixed_x = nodes_to_dofs(left_nodes, "x")
+    # fixed point at the middle of the left edge
+    mid_left_node = left_nodes[Ny // 2]
+    fixed_y = nodes_to_dofs(np.array([mid_left_node]), "y")
+
+    fixed = np.union1d(fixed_x, fixed_y)
+    free = np.setdiff1d(np.arange(nDof), fixed)
+
+    # Load vector: right unit load at mid-right
+    F = np.zeros(nDof)
+    mid_right_node = select_edge_nodes(nodeNrs, "right")[Ny // 2]
+    F[nodes_to_dofs(np.array([mid_right_node]), "x")[0]] = 1.0
+
+    return fixed, free, F
+
+
+def bridge_bc(
+    Nx: int, Ny: int, nodeNrs: np.ndarray, nDof: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    Bridge boundary conditions: fixed left edge, load at mid-right.
+
+    Args:
+        Nx: Number of elements in x-direction.
+        Ny: Number of elements in y-direction.
+        nodeNrs: Node numbering array (Ny+1 x Nx+1).
+        nDof: Total number of degrees of freedom.
+
+    Returns:
+        fixed: Array of fixed DOF indices.
+        free: Array of free DOF indices.
+        F: Load vector with applied forces.
+    """
+    # Bottom left & rights corners fixed in both directions
+    bl_node = select_corner_nodes(nodeNrs, "bottom-left")
+    br_node = select_corner_nodes(nodeNrs, "bottom-right")
+    fixed = nodes_to_dofs(np.union1d(bl_node, br_node), "both")
+    free = np.setdiff1d(np.arange(nDof), fixed)
+    # Uniform load on the top edge
+    # Apply a downward load of 1.0 distributed across the top edge nodes
+    F = np.zeros(nDof)
+    top_nodes = select_edge_nodes(nodeNrs, "top")
+    for node in top_nodes:
+        F[nodes_to_dofs(np.array([node]), "y")[0]] = -1.0 / len(top_nodes)
+
+    return fixed, free, F
+
+
+def setup_fea_problem(
+    Nx: int = 64,
+    Ny: int = 32,
+    rmin: float = 2.0,
+    E0: float = 1.0,
+    Emin: float = 1e-6,
+    penal: float = 3.0,
+    nu: float = 0.3,
+    random_seed: int = 0,
+    bc_fn: Optional[
+        Callable[[int, int, np.ndarray, int], Tuple[np.ndarray, np.ndarray, np.ndarray]]
+    ] = None,
+) -> Dict[str, Any]:
     """
     Precompute all problem-specific matrices and parameters.
 
-    Sets up a 2D Cantilever beam problem with a fixed left edge and a downward
-    load on the bottom-right corner. Uses 4-node quadrilateral elements.
+    Sets up a 2D FEA problem with flexible boundary conditions. By default,
+    uses a Cantilever beam with a fixed left edge and a downward load on the
+    bottom-right corner. Uses 4-node quadrilateral elements.
 
     Args:
         Nx: Number of elements in the x-direction.
@@ -40,6 +159,13 @@ def setup_fea_problem(Nx: int = 64, Ny: int = 32, rmin: float = 2.0,
         penal: Penalization factor for SIMP.
         nu: Poisson's ratio.
         random_seed: Seed for random number generation.
+        bc_fn: Boundary condition function. Takes (Nx, Ny, nodeNrs, nDof) and
+               returns (fixed, free, F). If None, uses mbb_bc.
+
+               Example BC functions available:
+               - mbb_bc: Standard MBB beam.
+               - tensile_bc: Fixed left edge, tensile load at mid-right.
+               - bridge_bc: Fixed bottom corners, uniform load on top edge.
 
     Returns:
         A dictionary containing all precomputed data:
@@ -54,8 +180,13 @@ def setup_fea_problem(Nx: int = 64, Ny: int = 32, rmin: float = 2.0,
         - 'Hs': Normalization factor for the filter (sum of weights).
 
     Note:
-    - We use Fortran ('F') order for reshaping to maintain consistency with 
+    - We use Fortran ('F') order for reshaping to maintain consistency with
         element numbering as in 88 lines code.
+    - Nodes (and thus DOFs) are numbered in a grid pattern, from top-left to bottom-right.
+        (column-wise numbering).
+        e.g., for Nx=2, Ny=1:
+        Node numbers: [[0, 2, 4],
+                       [1, 3, 5]]
     """
     set_random_seed(random_seed)
 
@@ -83,17 +214,13 @@ def setup_fea_problem(Nx: int = 64, Ny: int = 32, rmin: float = 2.0,
                        2*Ny, 2*Ny + 1, -2, -1])
     cMat = cVec[:, None] + offsets
 
-    # Boundary conditions
-    fixed1 = np.arange(0, 2 * (Ny + 1), 2)  # Fix left edge in x
-    fixed2 = 2 * nodeNrs[-1, -1] + 1        # Fix bottom-right corner in y
-    fixed = np.union1d(fixed1, fixed2)
-
+    # Apply boundary conditions
     nDof = 2 * (Nx + 1) * (Ny + 1)
-    free = np.setdiff1d(np.arange(nDof), fixed)
+    if bc_fn is None:
+        # Default to cantilever boundary conditions
+        bc_fn = mbb_bc
 
-    # Load vector
-    F = np.zeros(nDof)
-    F[1] = -1.0  # Downward unit load
+    fixed, free, F = bc_fn(Nx, Ny, nodeNrs, nDof)
 
     # Density filter setup
     range_val = np.arange(-np.ceil(rmin) + 1, np.ceil(rmin))

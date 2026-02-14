@@ -1,7 +1,4 @@
-from adto.non_ad_ops import (
-    setup_fea_problem,
-    optimality_criteria,
-)
+from adto.non_ad_ops import setup_fea_problem, mbb_bc, tensile_bc, bridge_bc
 from adto.backends import (
     solve,
     assemble_stiffness_matrix_parts,
@@ -11,7 +8,14 @@ from adto.backends import (
     volume_enforcing_filter,
     reduce_K,
 )
-
+from adto.utils import (
+    select_edge_nodes,
+    select_corner_nodes,
+    select_center_node,
+    select_region_nodes,
+    nodes_to_dofs,
+    visualize_bc,
+)
 # Optionally export other modules
 from adto import non_ad_ops
 from adto import nn_models
@@ -22,6 +26,15 @@ BACKEND = _backend.__name__.split(".")[-1].replace("_backend", "")
 
 __all__ = [
     "setup_fea_problem",
+    "mbb_bc",
+    "tensile_bc",
+    "bridge_bc",
+    "select_edge_nodes",
+    "select_corner_nodes",
+    "select_center_node",
+    "select_region_nodes",
+    "nodes_to_dofs",
+    "visualize_bc",
     "optimality_criteria",
     "solve",
     "assemble_stiffness_matrix_parts",
