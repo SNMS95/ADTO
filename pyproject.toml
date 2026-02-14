@@ -4,8 +4,13 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "adto"
-version = "0.1.0"
-description = "Automatic Differentiation for Topology Optimization"
+version = "0.2.0"
+description = "Automatic Differentiation for (neural) Topology Optimization"
+dependencies = [
+    "numpy",
+    "scipy",
+    "matplotlib",
+]
 
 [tool.setuptools]
 package-dir = {"" = "src"}

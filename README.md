@@ -1,51 +1,76 @@
 # Automatic Differentiation in (Neural) Topology Optimization
 
-This repository accompanies the educational article
-“Leveraging Automatic Differentiation in Modern Machine Learning Frameworks for (Neural) Topology Optimization”
-(submitted to Structural and Multidisciplinary Optimization).
+Educational implementation of topology optimization using automatic differentiation (AD) in modern ML frameworks (JAX and PyTorch) for sensitivity analysis. Contains examples of writing custom rules for AD integration, for linear solvers and root finders (using the Implicit function Theorem).
 
----
+## Repository Structure
 
-## Overview
+```
+ADTO/
+├── src/adto/                 # Main package
+│   ├── __init__.py
+│   ├── nn_models.py         # Neural network architectures
+│   ├── non_ad_ops.py        # Non-AD operations
+│   ├── utils.py             # Utility functions
+│   └── backends/
+│       ├── interface.py      # Backend interface
+│       ├── jax_backend.py    # JAX implementation
+│       ├── torch_backend.py  # PyTorch implementation
+│       └── ad_backend.py     # AD utilities
+├── examples/                 # Jupyter notebooks
+│   ├── TO.ipynb             # Standard TO (OC method)
+│   └── neuralTO.ipynb       # Neural TO
+└── pyproject.toml           # Package configuration
+```
 
-This repository provides minimal, educational implementations demonstrating how automatic differentiation (AD) can be applied to topology optimization (TO) using modern ML frameworks such as JAX and PyTorch.
+## Quick Start with Google Colab (Recommended)
 
-No installation is required — simply open any of the notebooks (*.ipynb) in Google Colab by clicking on the “Open in Colab” badge.
-You can choose the backend (either PyTorch or JAX), and the autodiff capabilities of the selected ML framework will be used for sensitivity analysis.
+The easiest way to get started is using Google Colab—no installation needed:
 
----
+1. Open any notebook in Colab:
+   - [TO.ipynb](https://colab.research.google.com/github/SNMS95/ADTO/blob/main/examples/TO.ipynb)
+   - [neuralTO.ipynb](https://colab.research.google.com/github/SNMS95/ADTO/blob/main/examples/neuralTO.ipynb)
 
-## Repository Contents
-- common_numpy.py
-Contains core topology optimization operations implemented in NumPy, which does not support automatic differentiation.
-Includes:
-	-   FEA preprocessing
-	-   Compliance computation
-	-	Optimality Criteria (OC) method
-	-	Simple bisection algorithm for scalar root-finding
--	backend_utils.py
-Provides JAX and PyTorch implementations of the same operations, including custom autodiff rules to make them differentiable and compatible with larger ML workflows.
--	nn_keras.py
-Defines neural network architectures using the Keras API.
-The interface is backend-agnostic and provides a simple way to parameterize the density field.
--	TO.ipynb
-Demonstrates standard topology optimization using the Optimality Criteria method (without neural networks).
--	neuralTO.ipynb
-Demonstrates Neural Topology Optimization (NTO), where a neural network parameterizes the density field, and sensitivities are obtained via automatic differentiation.
+2. Select your backend (JAX or PyTorch) and run the cells.
 
----
+## Installation
 
-## How to Use
+### Local Installation with Conda
 
-Ideally
-	1.	Open any notebook (e.g., TO.ipynb or neuralTO.ipynb) using Google Colab.
-	2.	Select the desired backend (JAX or PyTorch) within the notebook.
-	3.	Run the cells sequentially to explore differentiable TO workflows.
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/SNMS95/ADTO.git
+   cd ADTO
+   ```
 
-For running locally,
-....
----
+2. **Create a conda environment:**
+   ```bash
+   conda create -n adto_env python=3.12
+   conda activate adto_env
+   ```
+
+3. **Install the package and dependencies:**
+   ```bash
+   pip install -e .
+   ```
+
+4. **Install a backend (choose one):**
+   - **JAX:** https://docs.jax.dev/en/latest/installation.html
+   - **PyTorch:** https://pytorch.org/get-started/locally/
+
+5. **For notebook support:**
+   ```bash
+   conda install jupyter ipykernel
+   ```
+
+## Quick Start
+
+Run any notebook in the `examples/` directory:
+```bash
+jupyter notebook examples/neuralTO.ipynb
+```
+
+Select your backend (JAX or PyTorch) within the notebook and execute cells sequentially.
 
 ## Citation
 
-If you use this code or find it helpful, please cite the accompanying article once it is published in Structural and Multidisciplinary Optimization.
+If you use this code, please cite the accompanying article in Structural and Multidisciplinary Optimization.
