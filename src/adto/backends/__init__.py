@@ -1,3 +1,4 @@
+from typing import TYPE_CHECKING, Any
 from adto.backends.interface import get_backend
 
 _backend = get_backend()
@@ -9,8 +10,20 @@ compute_compliance_differentiable = _backend.compute_compliance_differentiable
 bisection_differentiable = _backend.bisection_differentiable
 apply_density_filter = _backend.apply_density_filter
 volume_enforcing_filter = _backend.volume_enforcing_filter
-assemble_stiffness_matrix_parts = _backend.assemble_stiffness_matrix_parts
 reduce_K = _backend.reduce_K
+
+# Type stubs for static type checkers
+if TYPE_CHECKING:
+    from typing import Callable
+
+    # These are placeholders to help type checkers understand the exported functions
+    solve: Callable[..., Any]
+    assemble_stiffness_matrix_parts: Callable[..., Any]
+    compute_compliance_differentiable: Callable[..., Any]
+    bisection_differentiable: Callable[..., Any]
+    apply_density_filter: Callable[..., Any]
+    volume_enforcing_filter: Callable[..., Any]
+    reduce_K: Callable[..., Any]
 
 # Explicitly declare for type checkers
 __all__ = [

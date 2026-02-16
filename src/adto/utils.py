@@ -291,8 +291,8 @@ def visualize_bc(
 
         # Draw arrow
         ax.arrow(
-            x,
-            y,
+            x - dx,
+            y - dy,
             dx,
             dy,
             head_width=0.2,

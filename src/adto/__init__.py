@@ -1,4 +1,11 @@
-from adto.non_ad_ops import setup_fea_problem, mbb_bc, tensile_bc, bridge_bc
+from adto.non_ad_ops import (
+    setup_fea_problem,
+    mbb_bc,
+    tensile_bc,
+    bridge_bc,
+    michell_bc,
+    optimality_criteria,
+)
 from adto.backends import (
     solve,
     assemble_stiffness_matrix_parts,
@@ -29,6 +36,8 @@ __all__ = [
     "mbb_bc",
     "tensile_bc",
     "bridge_bc",
+    "michell_bc",
+    "optimality_criteria",
     "select_edge_nodes",
     "select_corner_nodes",
     "select_center_node",

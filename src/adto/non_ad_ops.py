@@ -15,10 +15,7 @@ from typing import Dict, Tuple, Callable, Any, Optional
 from adto.utils import (
     select_edge_nodes,
     select_corner_nodes,
-    select_center_node,
-    select_region_nodes,
     nodes_to_dofs,
-    visualize_bc,
 )
 # Set seed for numpy
 
@@ -127,6 +124,20 @@ def bridge_bc(
     for node in top_nodes:
         F[nodes_to_dofs(np.array([node]), "y")[0]] = -1.0 / len(top_nodes)
 
+    return fixed, free, F
+
+def michell_bc(
+    Nx: int, Ny: int, nodeNrs: np.ndarray, nDof: int
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Classical Michell BCs. Cantilever beam with fixed left edge and point load at mid-right."""
+    # left edge fully fixed
+    left_nodes = select_edge_nodes(nodeNrs, "left")
+    fixed = nodes_to_dofs(left_nodes, "both")
+    free = np.setdiff1d(np.arange(nDof), fixed)
+    # point load at mid-right
+    F = np.zeros(nDof)
+    mid_right_node = select_edge_nodes(nodeNrs, "right")[Ny // 2]
+    F[nodes_to_dofs(np.array([mid_right_node]), "y")[0]] = -1.0
     return fixed, free, F
 
 
