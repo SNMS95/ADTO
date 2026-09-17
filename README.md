@@ -54,8 +54,8 @@ The easiest way to get started is using Google Colab—no installation needed:
    ```
 
 4. **Install a backend (choose one):**
-   - **JAX:** https://docs.jax.dev/en/latest/installation.html
-   - **PyTorch:** https://pytorch.org/get-started/locally/
+   - **JAX:** https://docs.jax.dev/en/latest/installation.html [Tested with version 0.11]
+   - **PyTorch:** https://pytorch.org/get-started/locally/ [Tested with version 2.11]
 
 5. **For notebook support:**
    ```bash
@@ -74,3 +74,18 @@ Select your backend (JAX or PyTorch) within the notebook and execute cells seque
 ## Citation
 
 If you use this code, please cite the accompanying article in Structural and Multidisciplinary Optimization.
+```
+@article{Sanu2026,
+  title = {Leveraging automatic differentiation in modern machine learning frameworks for (neural) topology optimization},
+  volume = {69},
+  ISSN = {1615-1488},
+  url = {http://dx.doi.org/10.1007/s00158-026-04299-6},
+  DOI = {10.1007/s00158-026-04299-6},
+  number = {5},
+  journal = {Structural and Multidisciplinary Optimization},
+  publisher = {Springer Science and Business Media LLC},
+  author = {Sanu,  Suryanarayanan Manoj and Bessa,  Miguel A. and Aragón,  Alejandro M.},
+  year = {2026},
+  month = May 
+}
+```
