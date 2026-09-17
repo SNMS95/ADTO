@@ -28,6 +28,8 @@ import pandas as pd
 
 from adto.nn_models import create_network_and_input
 
+# with or without float 64 is irrelevant for memory analysis,
+#  but we disable it to avoid unnecessary memory overhead
 jax.config.update("jax_enable_x64", False)
 
 NN_TYPE = "mlp"
@@ -63,8 +65,8 @@ def get_memory_usage(nn, grid_size):
     def loss_fn(trainable_vars, non_trainable_vars, inputs):
         """Compute mean of NN predictions over all input points."""
         output, non_train_vars = nn.stateless_call(
-                        trainable_vars, non_trainable_vars, inputs)
-        output = output.astype(jnp.float64)
+            trainable_vars, non_trainable_vars, inputs
+        )
         return jnp.mean(output)  # Aggregate to scalar
 
     # Jacobian of loss w.r.t. parameters (traces backward pass)
